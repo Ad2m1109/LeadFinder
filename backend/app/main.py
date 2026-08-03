@@ -78,6 +78,10 @@ async def run_scraping_job(country: str, city: str, category: str, max_results: 
         task_status["status"] = "failed"
         task_status["error"] = str(e)
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "LeadFinder API"}
+
 @app.post("/api/search")
 async def start_search(request: SearchRequest, background_tasks: BackgroundTasks):
     global task_status

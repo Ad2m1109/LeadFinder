@@ -1,8 +1,8 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (parent of app/)
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 
 class Config:
     GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", "Lead Finder Results")
