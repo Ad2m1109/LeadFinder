@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: leadfinder-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: GOOGLE_SHEET_NAME
+        sync: false
+      - key: GOOGLE_CREDENTIALS_JSON
+        sync: false
+      - key: GOOGLE_CREDENTIALS_FILE
+        value: "credentials.json"
+    healthCheckPath: /api/status

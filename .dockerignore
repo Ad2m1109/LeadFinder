@@ -1,0 +1,9 @@
+.git
+.gitignore
+frontend/
+*.md
+.env
+leads.csv
+screenshots/
+__pycache__/
+*.pyc
