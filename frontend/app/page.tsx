@@ -621,8 +621,8 @@ export default function Dashboard() {
                               </a>
                             </div>
                             {lead.screenshot && (
-                              <a href={`${API_BASE}${lead.screenshot}`} target="_blank" rel="noopener noreferrer" className="block w-[100px] h-[56px] rounded border border-zinc-800 overflow-hidden hover:border-indigo-500 transition relative group bg-zinc-900">
-                                <img src={`${API_BASE}${lead.screenshot}`} alt="Website Preview" className="w-full h-full object-cover object-top opacity-80 group-hover:opacity-100 transition" />
+                              <a href={`${lead.screenshot}`} target="_blank" rel="noopener noreferrer" className="block w-[100px] h-[56px] rounded border border-zinc-800 overflow-hidden hover:border-indigo-500 transition relative group bg-zinc-900">
+                                <img src={`${lead.screenshot}`} alt="Website Preview" className="w-full h-full object-cover object-top opacity-80 group-hover:opacity-100 transition" />
                                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                                   <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
                                 </div>
