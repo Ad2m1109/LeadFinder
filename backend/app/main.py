@@ -17,19 +17,19 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Lead Finder API", version="1.0.0")
 
-# Setup screenshots directory and mount it
-screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "screenshots")
-os.makedirs(screenshots_dir, exist_ok=True)
-app.mount("/screenshots", StaticFiles(directory=screenshots_dir), name="screenshots")
-
-# Enable CORS for Next.js frontend
+# Enable CORS BEFORE anything else
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust for production
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Setup screenshots directory and mount it (AFTER CORS)
+screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "screenshots")
+os.makedirs(screenshots_dir, exist_ok=True)
+app.mount("/screenshots", StaticFiles(directory=screenshots_dir), name="screenshots")
 
 # Search request model
 class SearchRequest(BaseModel):
@@ -81,6 +81,10 @@ async def run_scraping_job(country: str, city: str, category: str, max_results: 
 @app.get("/")
 async def root():
     return {"status": "ok", "service": "LeadFinder API"}
+
+@app.get("/api/routes")
+async def list_routes():
+    return {"routes": [r.path for r in app.routes if hasattr(r, "path")]}
 
 @app.post("/api/search")
 async def start_search(request: SearchRequest, background_tasks: BackgroundTasks):
