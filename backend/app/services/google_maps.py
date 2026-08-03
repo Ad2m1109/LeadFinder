@@ -167,8 +167,14 @@ async def scrape_google_maps(
                 processed_urls.add(href)
                 
                 try:
-                    # Extract basic info directly from feed item (no clicking needed)
-                    business = await extract_feed_item(link)
+                    # Get parent container of the link for full feed item data
+                    parent = await link.evaluate_handle("el => el.closest('[class]') && (el.parentElement || el)")
+                    
+                    # Extract basic info from parent container
+                    business = await extract_feed_item(parent)
+                    if not business or not business.get("name"):
+                        # Fallback: try the link itself
+                        business = await extract_feed_item(link)
                     if not business or not business.get("name"):
                         continue
                     
@@ -242,76 +248,77 @@ async def scrape_google_maps(
             await browser.close()
             logger.info("Browser closed.")
 
-async def extract_feed_item(link) -> Optional[dict]:
-    """Extract basic info from a feed item without clicking."""
+async def extract_feed_item(parent) -> Optional[dict]:
+    """Extract basic info from a feed item's parent container."""
     try:
-        # Get the aria-label which often contains the full info
-        aria_label = await link.get_attribute("aria-label") or ""
+        aria_label = await parent.get_attribute("aria-label") or ""
+        all_text = (await parent.inner_text()).strip()
         
-        # Get all text content from child elements
-        all_text = (await link.inner_text()).strip()
-        
-        # Debug: log raw data for first few items
-        logger.info(f"FEED ITEM aria-label: [{aria_label[:200]}]")
-        logger.info(f"FEED ITEM inner_text: [{all_text[:200]}]")
+        logger.info(f"FEED ITEM aria-label: [{aria_label[:300]}]")
+        logger.info(f"FEED ITEM inner_text: [{all_text[:300]}]")
         
         name = ""
         rating = 0.0
         reviews = 0
         address = ""
+        phone = ""
+        website = ""
         
-        # Parse aria-label lines
-        lines = [l.strip() for l in aria_label.split("\n") if l.strip()]
+        # Use inner_text which has the full content
+        lines = [l.strip() for l in all_text.split("\n") if l.strip()]
         
         if lines:
             name = lines[0]
             
-            # Parse remaining lines for rating, reviews, address
             for line in lines[1:]:
-                # Rating: a number like "4.7" or "4.9"
+                # Rating: standalone number like "4.7"
                 if not rating:
-                    rating_match = re.match(r'^(\d\.\d)$', line)
-                    if rating_match:
-                        try:
-                            rating = float(rating_match.group(1))
-                        except ValueError:
-                            pass
+                    m = re.match(r'^(\d\.\d)$', line)
+                    if m:
+                        try: rating = float(m.group(1))
+                        except ValueError: pass
                         continue
                 
-                # Reviews: "1,234" or "(1,234)" or just digits
+                # Reviews: "(1,234)" or "1,234 reviews"
                 if not reviews:
-                    review_match = re.search(r'[\(]?([0-9,]+)[\)]?$', line.strip())
-                    if review_match:
-                        num_str = review_match.group(1).replace(',', '')
-                        if num_str.isdigit() and int(num_str) > 0:
-                            try:
-                                reviews = int(num_str)
-                            except ValueError:
-                                pass
+                    m = re.search(r'[\(]?([0-9,]+)[\)]?\s*(?:reviews?)?', line)
+                    if m:
+                        num_str = m.group(1).replace(',', '')
+                        if num_str.isdigit() and 0 < int(num_str) < 100000:
+                            try: reviews = int(num_str)
+                            except ValueError: pass
                             continue
                 
-                # Address: line containing letters and common address words
-                if not address and len(line) > 5:
-                    if any(c.isalpha() for c in line):
-                        # Skip lines that are just business type
-                        if line.lower() not in ['restaurant', 'italian restaurant', 'open', 'closed',
-                                                  'opens soon', 'permanently closed', 'order online',
-                                                  'dine-in', 'takeout', 'delivery']:
-                            address = line
-        
-        # Fallback: try inner_text if aria-label didn't work
-        if not name or len(name) < 2:
-            text_lines = [l.strip() for l in all_text.split("\n") if l.strip()]
-            if text_lines:
-                name = text_lines[0]
-        
+                # Phone: "+355..." or "0..." with digits
+                if not phone:
+                    m = re.search(r'(\+?[\d\s\-\(\)]{7,})', line)
+                    if m and re.search(r'\d{4,}', m.group(1)):
+                        phone = m.group(1).strip()
+                        continue
+                
+                # Website: contains http or common domain
+                if not website:
+                    m = re.search(r'(https?://\S+|www\.\S+)', line)
+                    if m:
+                        website = m.group(1).rstrip('.,;:')
+                        continue
+                
+                # Address: longer line with letters (not a known type/status)
+                skip_words = {'restaurant', 'italian restaurant', 'pizza', 'cafe', 'bar',
+                              'open', 'closed', 'opens soon', 'permanently closed',
+                              'order online', 'dine-in', 'takeout', 'delivery', 'sponsored',
+                              'results', 'saved'}
+                if not address and len(line) > 5 and any(c.isalpha() for c in line):
+                    if line.lower().strip() not in skip_words:
+                        address = line
+
         if not name or len(name) < 2:
             return None
             
         return {
             "name": clean_prefix(name),
-            "phone": "",
-            "website": "",
+            "phone": phone,
+            "website": website,
             "rating": rating,
             "reviews": reviews,
             "address": clean_prefix(address),
