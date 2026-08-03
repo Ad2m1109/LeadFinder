@@ -126,7 +126,7 @@ async def get_leads():
 
 @app.post("/api/clear")
 async def clear_leads():
-    """Clear local CSV file to start fresh."""
+    """Clear local CSV file and old screenshots to start fresh."""
     global task_status
     if task_status["status"] == "running":
         raise HTTPException(status_code=400, detail="Cannot clear leads while scraping is active.")
@@ -136,9 +136,18 @@ async def clear_leads():
         try:
             os.remove(csv_path)
             sheet_service._init_csv()
-            logger.info("Cleared leads CSV database.")
-            return {"status": "success", "message": "Leads database cleared."}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to clear leads: {e}")
-            
-    return {"status": "success", "message": "Database already clean."}
+
+    # Clear old screenshots
+    screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "screenshots")
+    if os.path.exists(screenshots_dir):
+        for f in os.listdir(screenshots_dir):
+            if f.endswith(".png"):
+                try:
+                    os.remove(os.path.join(screenshots_dir, f))
+                except Exception:
+                    pass
+
+    logger.info("Cleared leads CSV and screenshots.")
+    return {"status": "success", "message": "Leads database and screenshots cleared."}
