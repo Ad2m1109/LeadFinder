@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright
 from app.services.sheet import SheetService
 from app.services.email import find_emails_on_website
 from app.services.website import analyze_website
+from app.services.ai import generate_personalized_pitch
 from app.config import Config
 
 logger = logging.getLogger(__name__)
