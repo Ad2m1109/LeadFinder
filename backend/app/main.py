@@ -86,6 +86,21 @@ async def root():
 async def list_routes():
     return {"routes": [r.path for r in app.routes if hasattr(r, "path")]}
 
+@app.get("/api/test-scrape")
+async def test_scrape():
+    """Test if Playwright/Chromium works on this server."""
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto("https://www.google.com", timeout=15000)
+            title = await page.title()
+            await browser.close()
+            return {"status": "ok", "title": title, "message": "Playwright works!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/api/search")
 async def start_search(request: SearchRequest, background_tasks: BackgroundTasks):
     global task_status
