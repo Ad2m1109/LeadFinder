@@ -1,9 +1,12 @@
 import logging
 import re
 import urllib.parse
+import requests
+import urllib3
 from typing import List, Set
-from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +52,11 @@ def get_contact_page_links(html: str, base_url: str) -> Set[str]:
                 contact_links.add(full_url)
     return contact_links
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+}
+
 async def find_emails_on_website(url: str) -> List[str]:
-    """
-    Phase 2: Crawl website and locate email addresses using Playwright APIRequest and BeautifulSoup.
-    """
     if not url:
         return []
         
@@ -63,38 +67,26 @@ async def find_emails_on_website(url: str) -> List[str]:
     emails = set()
     
     try:
-        async with async_playwright() as p:
-            # Use lightweight API context instead of launching a full Chromium browser window
-            request_context = await p.request.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-                ignore_https_errors=True
-            )
+        # 1. Fetch homepage
+        response = requests.get(url, headers=HEADERS, timeout=10, verify=False)
+        if response.ok:
+            html = response.text
+            home_emails = extract_emails_from_html(html)
+            emails.update(home_emails)
             
-            try:
-                # 1. Fetch homepage
-                response = await request_context.get(url, timeout=10000)
-                if response.ok:
-                    html = await response.text()
-                    home_emails = extract_emails_from_html(html)
-                    emails.update(home_emails)
+            # 2. Find contact pages
+            contact_links = get_contact_page_links(html, url)
+            
+            for contact_link in list(contact_links)[:2]:
+                try:
+                    logger.info(f"Checking contact page: {contact_link}")
+                    contact_res = requests.get(contact_link, headers=HEADERS, timeout=8, verify=False)
+                    if contact_res.ok:
+                        contact_emails = extract_emails_from_html(contact_res.text)
+                        emails.update(contact_emails)
+                except Exception as e:
+                    logger.debug(f"Failed to fetch contact page {contact_link}: {e}")
                     
-                    # 2. If no emails found (or just to be thorough), find contact pages
-                    contact_links = get_contact_page_links(html, url)
-                    
-                    # Limit to max 2 contact pages to keep scraping fast
-                    for contact_link in list(contact_links)[:2]:
-                        try:
-                            logger.info(f"Checking contact page: {contact_link}")
-                            contact_res = await request_context.get(contact_link, timeout=8000)
-                            if contact_res.ok:
-                                contact_html = await contact_res.text()
-                                contact_emails = extract_emails_from_html(contact_html)
-                                emails.update(contact_emails)
-                        except Exception as e:
-                            logger.debug(f"Failed to fetch contact page {contact_link}: {e}")
-            finally:
-                await request_context.dispose()
-                
     except Exception as e:
         logger.warning(f"Error crawling {url}: {e}")
         
