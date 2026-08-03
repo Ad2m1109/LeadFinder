@@ -1,11 +1,6 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# .venv folder
-.venv/
-
 # dependencies
-/node_modules
-/.pnp
+node_modules/
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -13,15 +8,23 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
-
 # next.js
-/.next/
-/out/
+.next/
+out/
+build/
+coverage/
 
-# production
-/build
+# python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# backend sensitive / generated
+backend/credentials.json
+backend/.env
+backend/screenshots/
 
 # misc
 .DS_Store
@@ -33,8 +36,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files
+.env
+.env.*
 
 # vercel
 .vercel
