@@ -251,6 +251,10 @@ async def extract_feed_item(link) -> Optional[dict]:
         # Get all text content from child elements
         all_text = (await link.inner_text()).strip()
         
+        # Debug: log raw data for first few items
+        logger.info(f"FEED ITEM aria-label: [{aria_label[:200]}]")
+        logger.info(f"FEED ITEM inner_text: [{all_text[:200]}]")
+        
         name = ""
         rating = 0.0
         reviews = 0
@@ -294,6 +298,12 @@ async def extract_feed_item(link) -> Optional[dict]:
                                                   'opens soon', 'permanently closed', 'order online',
                                                   'dine-in', 'takeout', 'delivery']:
                             address = line
+        
+        # Fallback: try inner_text if aria-label didn't work
+        if not name or len(name) < 2:
+            text_lines = [l.strip() for l in all_text.split("\n") if l.strip()]
+            if text_lines:
+                name = text_lines[0]
         
         if not name or len(name) < 2:
             return None
