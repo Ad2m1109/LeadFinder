@@ -154,36 +154,42 @@ async def scrape_google_maps(
             links = await page.locator('a[href*="/maps/place/"]').all()
             logger.info(f"Found {len(links)} total businesses.")
             
+            # Phase 1: Collect all feed data and hrefs from the feed (no navigation)
+            businesses = []
             processed_urls = set()
-            count = 0
             
             for link in links:
-                if count >= max_results:
-                    break
-                    
                 href = await link.get_attribute("href")
                 if not href or href in processed_urls:
                     continue
                 processed_urls.add(href)
                 
                 try:
-                    # Get parent container of the link for full feed item data
                     parent = await link.evaluate_handle("el => el.closest('[class]') && (el.parentElement || el)")
-                    
-                    # Extract basic info from parent container
                     business = await extract_feed_item(parent)
                     if not business or not business.get("name"):
-                        # Fallback: try the link itself
                         business = await extract_feed_item(link)
-                    if not business or not business.get("name"):
-                        continue
+                    if business and business.get("name"):
+                        business["_href"] = href
+                        businesses.append(business)
+                except Exception as e:
+                    logger.debug(f"Error extracting feed item: {e}")
+            
+            # Phase 2: Visit each place detail page to get phone/website
+            search_url = page.url
+            count = 0
+            
+            for business in businesses:
+                if count >= max_results:
+                    break
                     
-                    count += 1
-                    
-                    # Try to get more details by clicking
-                    try:
-                        await link.click()
-                        await page.wait_for_timeout(2500)
+                href = business.pop("_href", "")
+                count += 1
+                
+                try:
+                    if href:
+                        await page.goto(href, wait_until="domcontentloaded")
+                        await page.wait_for_timeout(3000)
                         
                         details = await extract_details_panel(page)
                         if details:
@@ -201,9 +207,9 @@ async def scrape_google_maps(
                                 business["rating"] = details["rating"]
                             if details.get("reviews") and details["reviews"] > 0:
                                 business["reviews"] = details["reviews"]
-                    except Exception as e:
-                        logger.debug(f"Could not get details panel: {e}")
-                    
+                        
+                        logger.info(f"Detail for {business.get('name')}: phone={business.get('phone')}, website={business.get('website')}")
+
                     # Process social profiles
                     website_url = business.get("website", "").lower()
                     is_social = any(domain in website_url for domain in ["facebook.com", "instagram.com", "linkedin.com", "twitter.com", "linktr.ee"])
@@ -224,7 +230,7 @@ async def scrape_google_maps(
                                 business["email"] = found_emails[0]
                         except Exception:
                             pass
-                            
+                                
                     if business.get("website"):
                         try:
                             analysis = await analyze_website(context, business.get("website"), business.get("name", "lead"))
@@ -233,7 +239,7 @@ async def scrape_google_maps(
                             business["seo_issues"] = analysis.get("seo_issues", "")
                         except Exception:
                             pass
-                            
+                                
                     await sheet_service.append_business(business)
                     if on_lead_scraped:
                         on_lead_scraped(business)
@@ -270,6 +276,24 @@ async def extract_feed_item(parent) -> Optional[dict]:
         if lines:
             name = lines[0]
             
+            # Join all lines and look for address after · separator
+            full_text = " ".join(lines)
+            
+            # Extract address: text after last "·" in the type line (e.g., "Italian restaurant · · Rruga Papa Gjon Pali II 9")
+            dot_segments = [s.strip() for s in full_text.split("·") if s.strip()]
+            if len(dot_segments) >= 2:
+                # The address is typically the last segment after the business type
+                for seg in reversed(dot_segments):
+                    seg_lower = seg.lower().strip()
+                    # Skip known non-address segments
+                    if seg_lower in ['open', 'closed', 'opens soon', 'permanently closed',
+                                     'order online', 'dine-in', 'takeout', 'delivery',
+                                     'sponsored', 'results', 'saved']:
+                        continue
+                    if len(seg) > 3:
+                        address = seg
+                        break
+            
             for line in lines[1:]:
                 # Rating: standalone number like "4.7"
                 if not rating:
@@ -281,7 +305,7 @@ async def extract_feed_item(parent) -> Optional[dict]:
                 
                 # Reviews: "(1,234)" or "1,234 reviews"
                 if not reviews:
-                    m = re.search(r'[\(]?([0-9,]+)[\)]?\s*(?:reviews?)?', line)
+                    m = re.search(r'\(?(\d[\d,]*)\)?\s*(?:reviews?)?', line)
                     if m:
                         num_str = m.group(1).replace(',', '')
                         if num_str.isdigit() and 0 < int(num_str) < 100000:
@@ -302,15 +326,6 @@ async def extract_feed_item(parent) -> Optional[dict]:
                     if m:
                         website = m.group(1).rstrip('.,;:')
                         continue
-                
-                # Address: longer line with letters (not a known type/status)
-                skip_words = {'restaurant', 'italian restaurant', 'pizza', 'cafe', 'bar',
-                              'open', 'closed', 'opens soon', 'permanently closed',
-                              'order online', 'dine-in', 'takeout', 'delivery', 'sponsored',
-                              'results', 'saved'}
-                if not address and len(line) > 5 and any(c.isalpha() for c in line):
-                    if line.lower().strip() not in skip_words:
-                        address = line
 
         if not name or len(name) < 2:
             return None
