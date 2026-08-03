@@ -167,40 +167,71 @@ async def scrape_google_maps(
                 processed_urls.add(href)
                 
                 try:
-                    await link.click()
-                    await page.wait_for_timeout(2000)
+                    # Extract basic info directly from feed item (no clicking needed)
+                    business = await extract_feed_item(link)
+                    if not business or not business.get("name"):
+                        continue
                     
-                    business = await extract_details_panel(page)
-                    if business and business.get("name"):
-                        count += 1
+                    count += 1
+                    
+                    # Try to get more details by clicking
+                    try:
+                        await link.click()
+                        await page.wait_for_timeout(2500)
                         
-                        website_url = business.get("website", "").lower()
-                        is_social = any(domain in website_url for domain in ["facebook.com", "instagram.com", "linkedin.com", "twitter.com", "linktr.ee"])
-                        if is_social:
-                            if "facebook.com" in website_url and not business.get("facebook"):
-                                business["facebook"] = business["website"]
-                            elif "instagram.com" in website_url and not business.get("instagram"):
-                                business["instagram"] = business["website"]
-                            business["website"] = ""
-                            business["seo_score"] = 0
-                            business["screenshot"] = ""
-                            business["seo_issues"] = "Social Profile"
-                        
-                        if not business.get("email") and business.get("website"):
+                        details = await extract_details_panel(page)
+                        if details:
+                            if details.get("phone"):
+                                business["phone"] = details["phone"]
+                            if details.get("website"):
+                                business["website"] = details["website"]
+                            if details.get("email"):
+                                business["email"] = details["email"]
+                            if details.get("instagram"):
+                                business["instagram"] = details["instagram"]
+                            if details.get("facebook"):
+                                business["facebook"] = details["facebook"]
+                            if details.get("rating") and details["rating"] > 0:
+                                business["rating"] = details["rating"]
+                            if details.get("reviews") and details["reviews"] > 0:
+                                business["reviews"] = details["reviews"]
+                    except Exception as e:
+                        logger.debug(f"Could not get details panel: {e}")
+                    
+                    # Process social profiles
+                    website_url = business.get("website", "").lower()
+                    is_social = any(domain in website_url for domain in ["facebook.com", "instagram.com", "linkedin.com", "twitter.com", "linktr.ee"])
+                    if is_social:
+                        if "facebook.com" in website_url and not business.get("facebook"):
+                            business["facebook"] = business["website"]
+                        elif "instagram.com" in website_url and not business.get("instagram"):
+                            business["instagram"] = business["website"]
+                        business["website"] = ""
+                        business["seo_score"] = 0
+                        business["screenshot"] = ""
+                        business["seo_issues"] = "Social Profile"
+                    
+                    if not business.get("email") and business.get("website"):
+                        try:
                             found_emails = await find_emails_on_website(business.get("website"))
                             if found_emails:
                                 business["email"] = found_emails[0]
-                                
-                        if business.get("website"):
+                        except Exception:
+                            pass
+                            
+                    if business.get("website"):
+                        try:
                             analysis = await analyze_website(context, business.get("website"), business.get("name", "lead"))
                             business["seo_score"] = analysis.get("seo_score", 0)
                             business["screenshot"] = analysis.get("screenshot", "")
                             business["seo_issues"] = analysis.get("seo_issues", "")
-                                
-                        await sheet_service.append_business(business)
-                        if on_lead_scraped:
-                            on_lead_scraped(business)
-                        logger.info(f"Scraped {count}/{max_results}: {business.get('name')}")
+                        except Exception:
+                            pass
+                            
+                    await sheet_service.append_business(business)
+                    if on_lead_scraped:
+                        on_lead_scraped(business)
+                    logger.info(f"Scraped {count}/{max_results}: {business.get('name')}")
                             
                 except Exception as e:
                     logger.error(f"Error scraping business: {e}")
@@ -210,6 +241,80 @@ async def scrape_google_maps(
         finally:
             await browser.close()
             logger.info("Browser closed.")
+
+async def extract_feed_item(link) -> Optional[dict]:
+    """Extract basic info from a feed item without clicking."""
+    try:
+        # Get the aria-label which often contains the full info
+        aria_label = await link.get_attribute("aria-label") or ""
+        
+        # Get link text
+        link_text = (await link.inner_text()).strip()
+        
+        # Try to extract name from aria-label or text
+        name = ""
+        rating = 0.0
+        reviews = 0
+        address = ""
+        
+        # The aria-label usually has format: "Business Name\n4.7\n(123)\nAddress"
+        lines = [l.strip() for l in aria_label.split("\n") if l.strip()]
+        if not lines:
+            lines = [l.strip() for l in link_text.split("\n") if l.strip()]
+        
+        if lines:
+            name = lines[0]
+            
+            # Look for rating (number like 4.7)
+            for line in lines[1:4]:
+                rating_match = re.match(r'^([0-9.]+)$', line)
+                if rating_match:
+                    try:
+                        rating = float(rating_match.group(1))
+                    except ValueError:
+                        pass
+                    break
+            
+            # Look for reviews (number in parentheses or just a number)
+            for line in lines:
+                review_match = re.search(r'\(([0-9,]+)\)', line)
+                if review_match:
+                    try:
+                        reviews = int(review_match.group(1).replace(',', ''))
+                    except ValueError:
+                        pass
+                    break
+                review_match2 = re.match(r'^([0-9,]+)$', line)
+                if review_match2 and not re.match(r'^[0-9.]+$', line):
+                    try:
+                        reviews = int(review_match2.group(1).replace(',', ''))
+                    except ValueError:
+                        pass
+            
+            # Address is usually the last line with letters
+            for line in reversed(lines):
+                if any(c.isalpha() for c in line) and not re.match(r'^[0-9.]+$', line):
+                    if "restaurant" not in line.lower() or len(line) > 20:
+                        address = line
+                        break
+        
+        if not name:
+            return None
+            
+        return {
+            "name": clean_prefix(name),
+            "phone": "",
+            "website": "",
+            "rating": rating,
+            "reviews": reviews,
+            "address": clean_prefix(address),
+            "email": "",
+            "instagram": "",
+            "facebook": ""
+        }
+    except Exception as e:
+        logger.debug(f"Error extracting feed item: {e}")
+        return None
 
 async def extract_details_panel(page) -> Optional[dict]:
     try:
