@@ -229,107 +229,160 @@ async def extract_details_panel(page) -> Optional[dict]:
         website = ""
         address = ""
         
-        # 1. Name: locate h1
-        name_selectors = ['h1.DUwDvf', 'h1']
+        # Wait for details panel to settle
+        await page.wait_for_timeout(1500)
+        
+        # 1. Name: try multiple selectors (Google Maps changes class names often)
+        name_selectors = [
+            'h1.DUwDvf',
+            'div.lMbq3e h1',
+            'h1[class*="header"]',
+            'h1',
+        ]
         for sel in name_selectors:
-            locator = page.locator(sel).first
-            if await locator.is_visible():
-                name = await locator.inner_text()
-                break
+            try:
+                locator = page.locator(sel).first
+                if await locator.is_visible(timeout=2000):
+                    text = (await locator.inner_text()).strip()
+                    if text and text.lower() not in ["results", "results.", "loading..."]:
+                        name = text
+                        break
+            except Exception:
+                continue
                 
         if not name:
             return None
             
         # 2. Rating & Reviews
-        rating_locator = page.locator('.F7nice').first
-        if await rating_locator.is_visible():
-            text = await rating_locator.inner_text()
-            # Often "4.7(123)" or "4.7\n(123)"
-            match = re.search(r'([0-9.]+)\s*\(([0-9,]+)\)', text.replace('\n', ''))
-            if match:
-                rating = float(match.group(1))
-                reviews = int(match.group(2).replace(',', ''))
-            else:
-                # Fallback to separate spans
-                stars_span = rating_locator.locator('span[aria-hidden="true"]').first
-                if await stars_span.is_visible():
-                    try:
-                        rating = float(await stars_span.inner_text())
-                    except ValueError:
-                        pass
+        rating_selectors = ['.F7nice', 'span[role="img"]', 'div.F7nice']
+        for sel in rating_selectors:
+            try:
+                rating_locator = page.locator(sel).first
+                if await rating_locator.is_visible(timeout=1000):
+                    text = await rating_locator.inner_text()
+                    match = re.search(r'([0-9.]+)\s*\(([0-9,]+)\)', text.replace('\n', ''))
+                    if match:
+                        rating = float(match.group(1))
+                        reviews = int(match.group(2).replace(',', ''))
+                    else:
+                        stars_span = rating_locator.locator('span[aria-hidden="true"]').first
+                        if await stars_span.is_visible():
+                            try:
+                                rating = float(await stars_span.inner_text())
+                            except ValueError:
+                                pass
+                    if rating > 0:
+                        break
+            except Exception:
+                continue
 
         # 3. Address
-        address_locator = page.locator('[data-item-id="address"]').first
-        if await address_locator.is_visible():
-            address = await address_locator.get_attribute("aria-label")
-            if not address:
-                address = await address_locator.inner_text()
+        address_selectors = [
+            '[data-item-id="address"]',
+            'button[data-item-id="address"]',
+            'div[data-item-id="address"]',
+        ]
+        for sel in address_selectors:
+            try:
+                address_locator = page.locator(sel).first
+                if await address_locator.is_visible(timeout=1000):
+                    address = await address_locator.get_attribute("aria-label") or ""
+                    if not address:
+                        address = (await address_locator.inner_text()).strip()
+                    if address:
+                        break
+            except Exception:
+                continue
                 
         # 4. Phone
-        phone_locator = page.locator('[data-item-id^="phone:tel:"]').first
-        if await phone_locator.is_visible():
-            phone_attr = await phone_locator.get_attribute("data-item-id")
-            if phone_attr:
-                phone = phone_attr.replace("phone:tel:", "").strip()
+        phone_selectors = [
+            '[data-item-id^="phone:tel:"]',
+            'button[data-item-id^="phone:tel:"]',
+        ]
+        for sel in phone_selectors:
+            try:
+                phone_locator = page.locator(sel).first
+                if await phone_locator.is_visible(timeout=1000):
+                    phone_attr = await phone_locator.get_attribute("data-item-id")
+                    if phone_attr:
+                        phone = phone_attr.replace("phone:tel:", "").strip()
+                        break
+            except Exception:
+                continue
         
-        # Phone Fallback
         if not phone:
             phone_btn_selectors = [
                 'button[data-tooltip*="phone" i]',
-                'button[data-tooltip*="Phone" i]',
                 'button[aria-label*="Phone:" i]',
-                'button[aria-label*="phone" i]'
+                'button[aria-label*="phone" i]',
             ]
             for sel in phone_btn_selectors:
-                locator = page.locator(sel).first
-                if await locator.is_visible():
-                    lbl = await locator.get_attribute("aria-label")
-                    if lbl:
-                        phone = lbl.replace("Phone: ", "").strip()
-                        break
-                    else:
-                        phone = await locator.inner_text()
-                        break
+                try:
+                    locator = page.locator(sel).first
+                    if await locator.is_visible(timeout=1000):
+                        lbl = await locator.get_attribute("aria-label") or ""
+                        if lbl:
+                            phone = lbl.replace("Phone: ", "").strip()
+                        else:
+                            phone = (await locator.inner_text()).strip()
+                        if phone:
+                            break
+                except Exception:
+                    continue
 
         # 5. Website
-        website_locator = page.locator('[data-item-id="authority"]').first
-        if await website_locator.is_visible():
-            website = await website_locator.get_attribute("aria-label")
-            if not website:
-                website = await website_locator.inner_text()
+        website_selectors = [
+            '[data-item-id="authority"]',
+            'a[data-item-id="authority"]',
+        ]
+        for sel in website_selectors:
+            try:
+                website_locator = page.locator(sel).first
+                if await website_locator.is_visible(timeout=1000):
+                    website = await website_locator.get_attribute("aria-label") or ""
+                    if not website:
+                        website = (await website_locator.inner_text()).strip()
+                    if website:
+                        break
+            except Exception:
+                continue
                 
-        # Website Fallback
         if not website:
-            web_selectors = [
+            web_btn_selectors = [
                 'a[data-tooltip*="website" i]',
-                'a[data-tooltip*="Website" i]',
                 'a[aria-label*="Website" i]',
-                'a[aria-label*="website" i]'
+                'a[aria-label*="website" i]',
             ]
-            for sel in web_selectors:
-                locator = page.locator(sel).first
-                if await locator.is_visible():
-                    website = await locator.get_attribute("href")
-                    break
+            for sel in web_btn_selectors:
+                try:
+                    locator = page.locator(sel).first
+                    if await locator.is_visible(timeout=1000):
+                        website = await locator.get_attribute("href") or ""
+                        if website:
+                            break
+                except Exception:
+                    continue
 
         # 6. Social Media & Email Links
         email = ""
         instagram = ""
         facebook = ""
         try:
-            # Look at all anchor tags with href inside the details panel
             anchors = await page.locator('a[href]').all()
             for anchor in anchors:
-                href = await anchor.get_attribute("href")
-                if not href:
+                try:
+                    href = await anchor.get_attribute("href")
+                    if not href:
+                        continue
+                    href_lower = href.lower()
+                    if "facebook.com" in href_lower:
+                        facebook = href
+                    elif "instagram.com" in href_lower:
+                        instagram = href
+                    elif href_lower.startswith("mailto:"):
+                        email = href.replace("mailto:", "").split("?")[0].strip()
+                except Exception:
                     continue
-                href_lower = href.lower()
-                if "facebook.com" in href_lower:
-                    facebook = href
-                elif "instagram.com" in href_lower:
-                    instagram = href
-                elif href_lower.startswith("mailto:"):
-                    email = href.replace("mailto:", "").split("?")[0].strip()
         except Exception as e:
             logger.debug(f"Error extracting social/email links: {e}")
 
