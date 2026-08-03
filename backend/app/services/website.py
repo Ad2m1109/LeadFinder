@@ -49,7 +49,7 @@ async def analyze_website(url: str, business_name: str) -> Dict[str, Any]:
                 
                 # Capture screenshot
                 safe_name = "".join(c if c.isalnum() else "_" for c in business_name.lower())
-                screenshot_filename = f"{safe_name}_{int(time.time())}.png"
+                screenshot_filename = f"{safe_name}.png"
                 screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_filename)
                 
                 await page.screenshot(path=screenshot_path, type="png")
