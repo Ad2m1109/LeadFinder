@@ -101,6 +101,79 @@ async def test_scrape():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@app.get("/api/debug-maps")
+async def debug_maps():
+    """Debug Google Maps scraping to see what's happening."""
+    import urllib.parse
+    try:
+        from playwright.async_api import async_playwright
+        query = "Restaurant in Tirana, Albania"
+        search_url = f"https://www.google.com/maps/search/{urllib.parse.quote_plus(query)}"
+        
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 800}
+            )
+            page = await context.new_page()
+            
+            await page.goto(search_url)
+            await page.wait_for_timeout(5000)
+            
+            # Check for consent dialog
+            consent_found = False
+            try:
+                for selector in ['button:has-text("Accept all")', 'button:has-text("I agree")', 'button:has-text("Accepter")']:
+                    loc = page.locator(selector).first
+                    if await loc.is_visible(timeout=2000):
+                        await loc.click()
+                        consent_found = True
+                        await page.wait_for_timeout(2000)
+                        break
+            except:
+                pass
+            
+            # Check page content
+            title = await page.title()
+            url = page.url
+            content_snippet = (await page.content())[:2000]
+            
+            # Check for feed
+            feed_visible = False
+            try:
+                feed = page.locator('[role="feed"]')
+                feed_visible = await feed.is_visible(timeout=3000)
+            except:
+                pass
+            
+            # Check for business links
+            links = await page.locator('a[href*="/maps/place/"]').all()
+            
+            # Check for h1
+            h1_text = ""
+            try:
+                h1 = page.locator('h1').first
+                if await h1.is_visible(timeout=2000):
+                    h1_text = await h1.inner_text()
+            except:
+                pass
+            
+            await browser.close()
+            
+            return {
+                "query": query,
+                "url": url,
+                "title": title,
+                "consent_handled": consent_found,
+                "feed_visible": feed_visible,
+                "business_links_count": len(links),
+                "h1_text": h1_text,
+                "content_snippet": content_snippet[:500]
+            }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/api/search")
 async def start_search(request: SearchRequest, background_tasks: BackgroundTasks):
     global task_status
