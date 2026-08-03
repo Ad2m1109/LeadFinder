@@ -248,57 +248,54 @@ async def extract_feed_item(link) -> Optional[dict]:
         # Get the aria-label which often contains the full info
         aria_label = await link.get_attribute("aria-label") or ""
         
-        # Get link text
-        link_text = (await link.inner_text()).strip()
+        # Get all text content from child elements
+        all_text = (await link.inner_text()).strip()
         
-        # Try to extract name from aria-label or text
         name = ""
         rating = 0.0
         reviews = 0
         address = ""
         
-        # The aria-label usually has format: "Business Name\n4.7\n(123)\nAddress"
+        # Parse aria-label lines
         lines = [l.strip() for l in aria_label.split("\n") if l.strip()]
-        if not lines:
-            lines = [l.strip() for l in link_text.split("\n") if l.strip()]
         
         if lines:
             name = lines[0]
             
-            # Look for rating (number like 4.7)
-            for line in lines[1:4]:
-                rating_match = re.match(r'^([0-9.]+)$', line)
-                if rating_match:
-                    try:
-                        rating = float(rating_match.group(1))
-                    except ValueError:
-                        pass
-                    break
-            
-            # Look for reviews (number in parentheses or just a number)
-            for line in lines:
-                review_match = re.search(r'\(([0-9,]+)\)', line)
-                if review_match:
-                    try:
-                        reviews = int(review_match.group(1).replace(',', ''))
-                    except ValueError:
-                        pass
-                    break
-                review_match2 = re.match(r'^([0-9,]+)$', line)
-                if review_match2 and not re.match(r'^[0-9.]+$', line):
-                    try:
-                        reviews = int(review_match2.group(1).replace(',', ''))
-                    except ValueError:
-                        pass
-            
-            # Address is usually the last line with letters
-            for line in reversed(lines):
-                if any(c.isalpha() for c in line) and not re.match(r'^[0-9.]+$', line):
-                    if "restaurant" not in line.lower() or len(line) > 20:
-                        address = line
-                        break
+            # Parse remaining lines for rating, reviews, address
+            for line in lines[1:]:
+                # Rating: a number like "4.7" or "4.9"
+                if not rating:
+                    rating_match = re.match(r'^(\d\.\d)$', line)
+                    if rating_match:
+                        try:
+                            rating = float(rating_match.group(1))
+                        except ValueError:
+                            pass
+                        continue
+                
+                # Reviews: "1,234" or "(1,234)" or just digits
+                if not reviews:
+                    review_match = re.search(r'[\(]?([0-9,]+)[\)]?$', line.strip())
+                    if review_match:
+                        num_str = review_match.group(1).replace(',', '')
+                        if num_str.isdigit() and int(num_str) > 0:
+                            try:
+                                reviews = int(num_str)
+                            except ValueError:
+                                pass
+                            continue
+                
+                # Address: line containing letters and common address words
+                if not address and len(line) > 5:
+                    if any(c.isalpha() for c in line):
+                        # Skip lines that are just business type
+                        if line.lower() not in ['restaurant', 'italian restaurant', 'open', 'closed',
+                                                  'opens soon', 'permanently closed', 'order online',
+                                                  'dine-in', 'takeout', 'delivery']:
+                            address = line
         
-        if not name:
+        if not name or len(name) < 2:
             return None
             
         return {
