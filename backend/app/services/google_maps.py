@@ -247,6 +247,8 @@ async def scrape_google_maps(
                             
                 except Exception as e:
                     logger.error(f"Error scraping business: {e}")
+            
+            return businesses[:max_results]
                     
         except Exception as e:
             logger.error(f"Scraper error: {e}")
@@ -276,23 +278,18 @@ async def extract_feed_item(parent) -> Optional[dict]:
         if lines:
             name = lines[0]
             
-            # Join all lines and look for address after · separator
-            full_text = " ".join(lines)
-            
-            # Extract address: text after last "·" in the type line (e.g., "Italian restaurant · · Rruga Papa Gjon Pali II 9")
-            dot_segments = [s.strip() for s in full_text.split("·") if s.strip()]
-            if len(dot_segments) >= 2:
-                # The address is typically the last segment after the business type
-                for seg in reversed(dot_segments):
-                    seg_lower = seg.lower().strip()
-                    # Skip known non-address segments
-                    if seg_lower in ['open', 'closed', 'opens soon', 'permanently closed',
-                                     'order online', 'dine-in', 'takeout', 'delivery',
-                                     'sponsored', 'results', 'saved']:
-                        continue
-                    if len(seg) > 3:
-                        address = seg
-                        break
+            # Look for address in lines: contains a street-like pattern or "·"
+            for line in lines[1:]:
+                if "·" in line:
+                    # Split by "·" and take the last meaningful segment (the address part)
+                    parts = [p.strip() for p in line.split("·") if p.strip()]
+                    if parts:
+                        # Last non-empty part is typically the address
+                        candidate = parts[-1]
+                        # Clean: must contain actual letters, not just numbers/symbols
+                        if any(c.isalpha() for c in candidate) and len(candidate) > 3:
+                            address = candidate
+                            break
             
             for line in lines[1:]:
                 # Rating: standalone number like "4.7"
