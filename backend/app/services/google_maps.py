@@ -110,7 +110,7 @@ async def scrape_google_maps(
                                 
                         # Phase 2: Website Analysis (SEO & Screenshot)
                         if business.get("website"):
-                            analysis = await analyze_website(business.get("website"), business.get("name", "lead"))
+                            analysis = await analyze_website(context, business.get("website"), business.get("name", "lead"))
                             business["seo_score"] = analysis.get("seo_score", 0)
                             business["screenshot"] = analysis.get("screenshot", "")
                             business["seo_issues"] = analysis.get("seo_issues", "")
@@ -202,7 +202,7 @@ async def scrape_google_maps(
                                 
                         # Phase 2: Website Analysis (SEO & Screenshot)
                         if business.get("website"):
-                            analysis = await analyze_website(business.get("website"), business.get("name", "lead"))
+                            analysis = await analyze_website(context, business.get("website"), business.get("name", "lead"))
                             business["seo_score"] = analysis.get("seo_score", 0)
                             business["screenshot"] = analysis.get("screenshot", "")
                             business["seo_issues"] = analysis.get("seo_issues", "")
