@@ -1,12 +1,9 @@
+import base64
 import logging
-import os
 from typing import Dict, Any
 from playwright.async_api import BrowserContext
 
 logger = logging.getLogger(__name__)
-
-SCREENSHOT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "screenshots")
-os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 async def analyze_website(context: BrowserContext, url: str, business_name: str) -> Dict[str, Any]:
     if not url:
@@ -19,7 +16,7 @@ async def analyze_website(context: BrowserContext, url: str, business_name: str)
 
     seo_score = 100
     seo_issues = []
-    screenshot_filename = ""
+    screenshot_base64 = ""
     page = None
 
     try:
@@ -33,12 +30,10 @@ async def analyze_website(context: BrowserContext, url: str, business_name: str)
             if "Checking your browser" in content or "Just a moment" in content or "Cloudflare" in content:
                 await page.wait_for_timeout(6000)
 
-            # Capture screenshot
-            safe_name = "".join(c if c.isalnum() else "_" for c in business_name.lower())
-            screenshot_filename = f"{safe_name}.png"
-            screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_filename)
-            await page.screenshot(path=screenshot_path, type="png")
-            logger.info(f"Screenshot saved: {screenshot_filename}")
+            # Capture screenshot as base64
+            screenshot_bytes = await page.screenshot(type="png")
+            screenshot_base64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+            logger.info(f"Screenshot captured for: {business_name}")
 
             # SEO Audit
             title = await page.title()
@@ -85,6 +80,6 @@ async def analyze_website(context: BrowserContext, url: str, business_name: str)
 
     return {
         "seo_score": max(0, seo_score),
-        "screenshot": f"/screenshots/{screenshot_filename}" if screenshot_filename else "",
+        "screenshot": f"data:image/png;base64,{screenshot_base64}" if screenshot_base64 else "",
         "seo_issues": ", ".join(seo_issues) if seo_issues else "Perfect SEO Basics"
     }

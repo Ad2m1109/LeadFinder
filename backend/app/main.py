@@ -2,7 +2,6 @@ import logging
 import os
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from app.services.google_maps import scrape_google_maps
 from app.services.sheet import SheetService
@@ -25,11 +24,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Setup screenshots directory and mount it (AFTER CORS)
-screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "screenshots")
-os.makedirs(screenshots_dir, exist_ok=True)
-app.mount("/screenshots", StaticFiles(directory=screenshots_dir), name="screenshots")
 
 # Search request model
 class SearchRequest(BaseModel):
@@ -58,6 +52,16 @@ def on_lead_scraped(lead: dict):
 async def run_scraping_job(country: str, city: str, category: str, max_results: int):
     """Executes the scraper in a background thread/task."""
     global task_status, sheet_service
+    
+    # Clear old data before starting a new scrape
+    csv_path = sheet_service.csv_path
+    if os.path.exists(csv_path):
+        try:
+            os.remove(csv_path)
+            sheet_service._init_csv()
+            logger.info("Cleared old leads CSV before new scrape.")
+        except Exception as e:
+            logger.error(f"Failed to clear CSV: {e}")
     
     # Reload credentials and settings before scraping
     sheet_service = SheetService()
@@ -141,7 +145,7 @@ async def get_leads():
 
 @app.post("/api/clear")
 async def clear_leads():
-    """Clear local CSV file and old screenshots to start fresh."""
+    """Clear local CSV file to start fresh."""
     global task_status
     if task_status["status"] == "running":
         raise HTTPException(status_code=400, detail="Cannot clear leads while scraping is active.")
@@ -154,15 +158,5 @@ async def clear_leads():
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to clear leads: {e}")
 
-    # Clear old screenshots
-    screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "screenshots")
-    if os.path.exists(screenshots_dir):
-        for f in os.listdir(screenshots_dir):
-            if f.endswith(".png"):
-                try:
-                    os.remove(os.path.join(screenshots_dir, f))
-                except Exception:
-                    pass
-
-    logger.info("Cleared leads CSV and screenshots.")
-    return {"status": "success", "message": "Leads database and screenshots cleared."}
+    logger.info("Cleared leads CSV.")
+    return {"status": "success", "message": "Leads database cleared."}

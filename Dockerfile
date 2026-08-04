@@ -36,9 +36,6 @@ RUN playwright install-deps chromium
 # Copy backend code
 COPY backend/ .
 
-# Create screenshots directory
-RUN mkdir -p screenshots
-
 EXPOSE 8000
 
 ENV PYTHONUNBUFFERED=1
