@@ -46,7 +46,8 @@ sheet_service = SheetService()
 def on_lead_scraped(lead: dict):
     """Callback triggered every time a lead is successfully scraped."""
     task_status["leads_found"] += 1
-    task_status["current_lead"] = lead
+    # Strip base64 screenshot to keep status payload small
+    task_status["current_lead"] = {k: v for k, v in lead.items() if k != "screenshot"}
     logger.info(f"Progress update: {task_status['leads_found']} leads found. Latest: {lead.get('name')}")
 
 async def run_scraping_job(country: str, city: str, category: str, max_results: int):
